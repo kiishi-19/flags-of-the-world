@@ -1,4 +1,7 @@
+import { COUNTRY_FACTS } from './facts';
+
 export function getHTML(): string {
+  const factsJSON = JSON.stringify(COUNTRY_FACTS);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -171,7 +174,37 @@ export function getHTML(): string {
     100% { opacity: 0; transform: translate(-50%, -70%) scale(0.9); }
   }
   .score-popup .pts { font-size: 2rem; font-weight: 800; color: var(--green); }
-  .score-popup .breakdown { font-size: 0.8rem; color: var(--text-dim); margin-top: 4px; }
+  .score-popup .breakdown { font-size: 0.85rem; color: var(--text-dim); margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+  .score-popup .speed-label { font-size: 1rem; font-weight: 700; margin-bottom: 4px; letter-spacing: 0.5px; }
+
+  /* ─── Fact Card ─────────────────────────────────────────────────── */
+  .fact-card {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 250;
+    background: linear-gradient(135deg, #0d1b2e, #111c30);
+    border-top: 1px solid var(--border);
+    padding: 18px 24px 24px;
+    display: flex; align-items: flex-start; gap: 16px;
+    animation: factSlideUp 0.35s cubic-bezier(0.34,1.56,0.64,1);
+    box-shadow: 0 -8px 40px rgba(0,0,0,0.5);
+    max-height: 180px;
+  }
+  @keyframes factSlideUp {
+    from { transform: translateY(100%); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  .fact-card.slide-down {
+    animation: factSlideDown 0.3s ease forwards;
+  }
+  @keyframes factSlideDown {
+    from { transform: translateY(0);    opacity: 1; }
+    to   { transform: translateY(100%); opacity: 0; }
+  }
+  .fact-card .fc-flag { width: 80px; height: auto; border-radius: 6px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.1); }
+  .fact-card .fc-body { flex: 1; min-width: 0; }
+  .fact-card .fc-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+  .fact-card .fc-country { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+  .fact-card .fc-text { font-size: 0.88rem; color: #a0aec0; line-height: 1.5; }
+  .fact-card .fc-next { font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; }
 
   /* ─── Multiplayer Game ──────────────────────────────────────────── */
   .mp-players-bar { width: 100%; max-width: 720px; display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
@@ -724,6 +757,7 @@ function randId() { return Math.random().toString(36).substr(2, 12); }
 // NAVIGATION
 // ═══════════════════════════════════════════════════════════════════
 function showScreen(id) {
+  hideFactCard();
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   window.scrollTo(0, 0);
@@ -841,6 +875,21 @@ function selectPill(el, group) {
   el.closest('.option-pills').querySelectorAll('.pill').forEach(p => p.classList.remove('selected'));
   el.classList.add('selected');
   pillState[group] = el.dataset.val;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// COUNTRY FACTS (embedded from facts.ts at build time)
+// ═══════════════════════════════════════════════════════════════════
+const COUNTRY_FACTS = ${factsJSON};
+
+// Speed tier helpers
+function getSpeedTier(timeElapsed, timeLimit) {
+  const pct = timeElapsed / timeLimit;
+  if (pct <= 0.20) return { label: 'INSTANT ⚡', color: '#00d4ff', bonus: 1500 };
+  if (pct <= 0.40) return { label: 'LIGHTNING 🔥', color: '#f59e0b', bonus: 1000 };
+  if (pct <= 0.60) return { label: 'QUICK ✓',    color: '#10b981', bonus:  600 };
+  if (pct <= 0.80) return { label: 'GOOD 👍',    color: '#a3e635', bonus:  300 };
+  return                   { label: 'JUST IN TIME ⏱️', color: '#94a3b8', bonus:  100 };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -972,10 +1021,10 @@ function handleSPAnswer(code, btn) {
   stopTimer();
   document.onkeydown = null;
 
-  const timeElapsed = (sp.timePerQ - parseInt(document.getElementById('timer-text').textContent));
+  const timeElapsed = sp.timePerQ - parseInt(document.getElementById('timer-text').textContent);
   const isCorrect = code === sp.currentCorrect;
 
-  // Visual feedback
+  // Visual feedback on options
   document.querySelectorAll('.option-btn').forEach((b, i) => {
     b.disabled = true;
     const opt = sp.pool[sp.current].options[i];
@@ -986,46 +1035,86 @@ function handleSPAnswer(code, btn) {
     }
   });
 
-  // Score
+  // Score — speed tier determines bonus
   if (isCorrect) {
-    const speedBonus = Math.max(0, Math.floor(((sp.timePerQ - timeElapsed) / sp.timePerQ) * 500));
-    const streakBonus = sp.streak * 100;
-    const earned = 1000 + speedBonus + streakBonus;
+    const tier = getSpeedTier(timeElapsed, sp.timePerQ);
+    const streakBonus = sp.streak * 150;
+    const earned = 500 + tier.bonus + streakBonus;
     sp.score += earned;
     sp.streak++;
     sp.bestStreak = Math.max(sp.bestStreak, sp.streak);
     sp.correct++;
-    showScorePopup(earned, speedBonus, streakBonus);
+    showScorePopup(earned, tier, streakBonus);
   } else {
     sp.streak = 0;
     sp.wrong++;
   }
 
-  sp.sessions.push({
-    code: sp.currentCorrect,
-    correct: isCorrect,
-    timeMs: timeElapsed * 1000,
-  });
+  sp.sessions.push({ code: sp.currentCorrect, correct: isCorrect, timeMs: timeElapsed * 1000 });
 
-  setTimeout(() => {
+  // Show country fact then advance
+  showFactCard(sp.currentCorrect, () => {
     sp.current++;
     loadQuestion();
-  }, isCorrect ? 900 : 1200);
+  });
 }
 
-function showScorePopup(total, speed, streak) {
+function showScorePopup(total, tier, streakBonus) {
   const el = document.createElement('div');
   el.className = 'score-popup';
+  el.style.borderColor = tier.color;
   el.innerHTML = \`
-    <div class="pts">+\${total.toLocaleString()}</div>
+    <div class="pts" style="color:\${tier.color}">+\${total.toLocaleString()}</div>
     <div class="breakdown">
-      Base 1000
-      \${speed > 0 ? \`· Speed +\${speed}\` : ''}
-      \${streak > 0 ? \`· Streak +\${streak}\` : ''}
+      <span class="speed-label" style="color:\${tier.color}">\${tier.label}</span>
+      <span>Base 500 &nbsp;·&nbsp; Speed +\${tier.bonus}</span>
+      \${streakBonus > 0 ? \`<span>Streak 🔥 +\${streakBonus}</span>\` : ''}
     </div>
   \`;
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 800);
+  setTimeout(() => el.remove(), 900);
+}
+
+let factCardEl = null;
+function showFactCard(countryCode, onDone) {
+  // Remove any existing card instantly
+  if (factCardEl) { factCardEl.remove(); factCardEl = null; }
+
+  const country = ALL_COUNTRIES.find(c => c.code === countryCode);
+  const fact = COUNTRY_FACTS[countryCode];
+  if (!country) { setTimeout(onDone, 400); return; }
+
+  const card = document.createElement('div');
+  card.className = 'fact-card';
+  card.innerHTML = \`
+    <img class="fc-flag" src="\${flagUrl(countryCode)}" alt="\${country.name}">
+    <div class="fc-body">
+      <div class="fc-label">Did you know?</div>
+      <div class="fc-country">\${country.name}</div>
+      <div class="fc-text">\${fact || 'One of the world\\'s ' + country.continent + ' nations.'}</div>
+    </div>
+  \`;
+  document.body.appendChild(card);
+  factCardEl = card;
+
+  // Auto-dismiss after 2.5 s then advance
+  setTimeout(() => {
+    if (factCardEl === card) {
+      card.classList.add('slide-down');
+      setTimeout(() => {
+        card.remove();
+        if (factCardEl === card) factCardEl = null;
+        onDone();
+      }, 300);
+    }
+  }, 2500);
+}
+
+function hideFactCard() {
+  if (factCardEl) {
+    factCardEl.remove();
+    factCardEl = null;
+  }
 }
 
 // ─── localStorage stats helpers ──────────────────────────────────────────────
@@ -1280,6 +1369,7 @@ let mpAnswered = false;
 let mpCurrentState = null;
 
 function showMPQuestion(gs) {
+  hideFactCard(); // clear any lingering fact from previous round
   mpAnswered = false;
   mpCurrentState = gs;
   state.mp.localScore = gs.players[state.playerId]?.score || 0;
@@ -1364,8 +1454,10 @@ function handleMPAnswerResult(msg) {
 }
 
 function showMPResults(gs) {
-  // Brief results phase handled automatically by server
-  // Just update the players bar
+  // Show country fact during the 3-second results window
+  showFactCard(gs.currentCorrect, () => {});
+
+  // Update the players bar
   const bar = document.getElementById('mp-players-bar');
   bar.innerHTML = Object.values(gs.players).sort((a,b) => b.score - a.score).map(p => \`
     <div class="mp-player-chip answered" id="mpchip-\${p.id}">
