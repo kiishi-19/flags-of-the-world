@@ -66,7 +66,7 @@ export default {
 
     // Save single-player score
     if (path === "/api/scores" && request.method === "POST") {
-      const body = await request.json<{
+      let body: {
         username: string;
         score: number;
         correct: number;
@@ -74,81 +74,98 @@ export default {
         continent: string;
         timePerQuestion: number;
         sessionData: Array<{ code: string; correct: boolean; timeMs: number }>;
-      }>();
-
-      const { username, score, correct, total, continent, sessionData } = body;
-      const now = Date.now();
-
-      // Update user stats
-      const statsKey = `stats:${username}`;
-      const existing = await env.FLAGS_KV.get<{
-        totalGames: number;
-        totalScore: number;
-        bestScore: number;
-        totalCorrect: number;
-        totalAnswered: number;
-        history: Array<{ score: number; correct: number; total: number; date: number; continent: string }>;
-        flagStats: Record<string, { correct: number; wrong: number }>;
-      }>(statsKey, "json");
-
-      const stats = existing || {
-        totalGames: 0,
-        totalScore: 0,
-        bestScore: 0,
-        totalCorrect: 0,
-        totalAnswered: 0,
-        history: [],
-        flagStats: {},
       };
 
-      stats.totalGames++;
-      stats.totalScore += score;
-      stats.bestScore = Math.max(stats.bestScore, score);
-      stats.totalCorrect += correct;
-      stats.totalAnswered += total;
+      try {
+        body = await request.json();
+      } catch {
+        return jsonResponse({ error: "Invalid JSON body" }, 400);
+      }
 
-      // Track per-flag performance
-      for (const item of sessionData || []) {
-        if (!stats.flagStats[item.code]) {
-          stats.flagStats[item.code] = { correct: 0, wrong: 0 };
+      const { username, score, correct, total, continent, sessionData } = body;
+
+      if (!username || typeof score !== "number" || typeof correct !== "number" || typeof total !== "number") {
+        return jsonResponse({ error: "Missing required fields: username, score, correct, total" }, 400);
+      }
+
+      const now = Date.now();
+
+      try {
+        // Update user stats
+        const statsKey = `stats:${username}`;
+        const existing = await env.FLAGS_KV.get<{
+          totalGames: number;
+          totalScore: number;
+          bestScore: number;
+          totalCorrect: number;
+          totalAnswered: number;
+          history: Array<{ score: number; correct: number; total: number; date: number; continent: string }>;
+          flagStats: Record<string, { correct: number; wrong: number }>;
+        }>(statsKey, "json");
+
+        const stats = existing || {
+          totalGames: 0,
+          totalScore: 0,
+          bestScore: 0,
+          totalCorrect: 0,
+          totalAnswered: 0,
+          history: [],
+          flagStats: {},
+        };
+
+        stats.totalGames++;
+        stats.totalScore += score;
+        stats.bestScore = Math.max(stats.bestScore, score);
+        stats.totalCorrect += correct;
+        stats.totalAnswered += total;
+
+        // Track per-flag performance
+        for (const item of sessionData || []) {
+          if (!stats.flagStats[item.code]) {
+            stats.flagStats[item.code] = { correct: 0, wrong: 0 };
+          }
+          if (item.correct) {
+            stats.flagStats[item.code].correct++;
+          } else {
+            stats.flagStats[item.code].wrong++;
+          }
         }
-        if (item.correct) {
-          stats.flagStats[item.code].correct++;
+
+        // Keep last 50 sessions
+        stats.history.unshift({ score, correct, total, date: now, continent });
+        stats.history = stats.history.slice(0, 50);
+
+        await env.FLAGS_KV.put(statsKey, JSON.stringify(stats), {
+          expirationTtl: 60 * 60 * 24 * 365,
+        });
+
+        // Update global leaderboard
+        const lbKey = `leaderboard:singleplayer`;
+        const leaderboard = await env.FLAGS_KV.get<Array<{ username: string; score: number; date: number }>>(lbKey, "json") || [];
+
+        // Upsert: keep user's best score on leaderboard
+        const idx = leaderboard.findIndex(e => e.username === username);
+        if (idx >= 0) {
+          if (score > leaderboard[idx].score) {
+            leaderboard[idx] = { username, score, date: now };
+          }
         } else {
-          stats.flagStats[item.code].wrong++;
+          leaderboard.push({ username, score, date: now });
         }
+
+        leaderboard.sort((a, b) => b.score - a.score);
+        const top100 = leaderboard.slice(0, 100);
+
+        await env.FLAGS_KV.put(lbKey, JSON.stringify(top100), {
+          expirationTtl: 60 * 60 * 24 * 365,
+        });
+
+        return jsonResponse({ success: true, stats });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("KV write error:", message);
+        return jsonResponse({ error: "Failed to save score: " + message }, 500);
       }
-
-      // Keep last 50 sessions
-      stats.history.unshift({ score, correct, total, date: now, continent });
-      stats.history = stats.history.slice(0, 50);
-
-      await env.FLAGS_KV.put(statsKey, JSON.stringify(stats), {
-        expirationTtl: 60 * 60 * 24 * 365,
-      });
-
-      // Update global leaderboard
-      const lbKey = `leaderboard:singleplayer`;
-      const leaderboard = await env.FLAGS_KV.get<Array<{ username: string; score: number; date: number }>>(lbKey, "json") || [];
-
-      // Upsert: keep user's best score on leaderboard
-      const idx = leaderboard.findIndex(e => e.username === username);
-      if (idx >= 0) {
-        if (score > leaderboard[idx].score) {
-          leaderboard[idx] = { username, score, date: now };
-        }
-      } else {
-        leaderboard.push({ username, score, date: now });
-      }
-
-      leaderboard.sort((a, b) => b.score - a.score);
-      const top100 = leaderboard.slice(0, 100);
-
-      await env.FLAGS_KV.put(lbKey, JSON.stringify(top100), {
-        expirationTtl: 60 * 60 * 24 * 365,
-      });
-
-      return jsonResponse({ success: true, stats });
     }
 
     // Get user stats

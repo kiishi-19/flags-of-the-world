@@ -14,8 +14,8 @@ new_classes = ["GameRoom"]
 
 [[kv_namespaces]]
 binding = "FLAGS_KV"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
-preview_id = "REPLACE_WITH_YOUR_KV_NAMESPACE_PREVIEW_ID"
+id = "1760de5884cb4fbb81db4190e3d8a102"
+preview_id = "29229cd09ba5498fb3216992cb3242a9"
 
 [vars]
 ENVIRONMENT = "production"

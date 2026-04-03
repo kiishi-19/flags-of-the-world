@@ -323,7 +323,7 @@ export function getHTML(): string {
   <div class="nav-brand" onclick="showHome()">Flags of the World</div>
   <div class="nav-links">
     <button class="nav-link" onclick="showScreen('screen-stats')">My Stats</button>
-    <button class="nav-link" onclick="showScreen('screen-leaderboard'); loadLeaderboard()">Leaderboard</button>
+    <button class="nav-link" onclick="showScreen('screen-leaderboard')">Leaderboard</button>
   </div>
   <div class="nav-user">
     <div class="nav-avatar" id="nav-avatar">?</div>
@@ -380,8 +380,8 @@ export function getHTML(): string {
       </div>
     </div>
     <div style="display:flex;gap:10px;margin-top:16px;">
-      <button class="btn btn-secondary btn-full" onclick="showScreen('screen-stats');loadStats()">My Stats</button>
-      <button class="btn btn-secondary btn-full" onclick="showScreen('screen-leaderboard');loadLeaderboard()">Leaderboard</button>
+      <button class="btn btn-secondary btn-full" onclick="showScreen('screen-stats')">My Stats</button>
+      <button class="btn btn-secondary btn-full" onclick="showScreen('screen-leaderboard')">Leaderboard</button>
     </div>
   </div>
 </div>
@@ -727,6 +727,9 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   window.scrollTo(0, 0);
+  // Auto-load data whenever these screens are shown
+  if (id === 'screen-stats') loadStats();
+  if (id === 'screen-leaderboard') loadLeaderboard();
 }
 
 function showHome() {
@@ -1019,7 +1022,7 @@ async function endSinglePlayer() {
 
   // Save to server
   try {
-    await fetch('/api/scores', {
+    const res = await fetch('/api/scores', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1032,7 +1035,17 @@ async function endSinglePlayer() {
         sessionData: sp.sessions,
       }),
     });
-  } catch(e) {}
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('Score save failed:', res.status, err);
+      toast('Score saved locally only — server error: ' + res.status, 'error');
+    } else {
+      toast('Score saved!', 'success');
+    }
+  } catch(e) {
+    console.error('Score save network error:', e);
+    toast('Could not reach server — score not saved', 'error');
+  }
 
   // Show results
   const accuracy = Math.round((sp.correct / sp.pool.length) * 100);
