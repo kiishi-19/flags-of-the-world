@@ -178,33 +178,52 @@ export function getHTML(): string {
   .score-popup .speed-label { font-size: 1rem; font-weight: 700; margin-bottom: 4px; letter-spacing: 0.5px; }
 
   /* ─── Fact Card ─────────────────────────────────────────────────── */
-  .fact-card {
-    position: fixed; bottom: 0; left: 0; right: 0; z-index: 250;
-    background: linear-gradient(135deg, #0d1b2e, #111c30);
-    border-top: 1px solid var(--border);
-    padding: 18px 24px 24px;
-    display: flex; align-items: flex-start; gap: 16px;
-    animation: factSlideUp 0.35s cubic-bezier(0.34,1.56,0.64,1);
-    box-shadow: 0 -8px 40px rgba(0,0,0,0.5);
-    max-height: 180px;
+  /* backdrop behind the fact card */
+  .fact-overlay {
+    position: fixed; inset: 0; z-index: 249;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(3px);
+    animation: overlayIn 0.3s ease;
   }
-  @keyframes factSlideUp {
-    from { transform: translateY(100%); opacity: 0; }
-    to   { transform: translateY(0);    opacity: 1; }
+  .fact-overlay.fade-out { animation: overlayOut 0.35s ease forwards; }
+  @keyframes overlayIn  { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes overlayOut { from { opacity: 1; } to { opacity: 0; } }
+
+  .fact-card {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 250;
+    width: min(520px, 92vw);
+    background: linear-gradient(145deg, #0f1f38 0%, #131f35 100%);
+    border: 1px solid rgba(0,212,255,0.25);
+    border-radius: 20px;
+    padding: 28px 28px 24px;
+    display: flex; flex-direction: column; gap: 18px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(0,212,255,0.08);
+    animation: factPop 0.4s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  @keyframes factPop {
+    from { opacity: 0; transform: translate(-50%, -50%) scale(0.82); }
+    to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   }
   .fact-card.slide-down {
-    animation: factSlideDown 0.3s ease forwards;
+    animation: factDismiss 0.3s ease forwards;
   }
-  @keyframes factSlideDown {
-    from { transform: translateY(0);    opacity: 1; }
-    to   { transform: translateY(100%); opacity: 0; }
+  @keyframes factDismiss {
+    from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    to   { opacity: 0; transform: translate(-50%, -46%) scale(0.93); }
   }
-  .fact-card .fc-flag { width: 80px; height: auto; border-radius: 6px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.1); }
+  .fact-card-top { display: flex; align-items: center; gap: 16px; }
+  .fact-card .fc-flag { width: 96px; height: auto; border-radius: 8px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
   .fact-card .fc-body { flex: 1; min-width: 0; }
-  .fact-card .fc-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
-  .fact-card .fc-country { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
-  .fact-card .fc-text { font-size: 0.88rem; color: #a0aec0; line-height: 1.5; }
-  .fact-card .fc-next { font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; }
+  .fact-card .fc-label { font-size: 0.68rem; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); margin-bottom: 5px; }
+  .fact-card .fc-country { font-size: 1.15rem; font-weight: 800; margin-bottom: 0; }
+  .fact-card .fc-divider { height: 1px; background: rgba(255,255,255,0.07); }
+  .fact-card .fc-text { font-size: 0.92rem; color: #b0bfcf; line-height: 1.65; }
+  .fact-card .fc-timer-bar { height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+  .fact-card .fc-timer-fill { height: 100%; background: var(--accent); border-radius: 2px; animation: timerShrink var(--fact-duration, 5s) linear forwards; }
+  @keyframes timerShrink { from { width: 100%; } to { width: 0%; } }
 
   /* ─── Multiplayer Game ──────────────────────────────────────────── */
   .mp-players-bar { width: 100%; max-width: 720px; display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
@@ -1075,46 +1094,75 @@ function showScorePopup(total, tier, streakBonus) {
   setTimeout(() => el.remove(), 900);
 }
 
+const FACT_DURATION = 5000; // ms the card stays visible
 let factCardEl = null;
+let factOverlayEl = null;
+
 function showFactCard(countryCode, onDone) {
-  // Remove any existing card instantly
-  if (factCardEl) { factCardEl.remove(); factCardEl = null; }
+  // Clean up any existing card
+  if (factCardEl)    { factCardEl.remove();    factCardEl    = null; }
+  if (factOverlayEl) { factOverlayEl.remove(); factOverlayEl = null; }
 
   const country = ALL_COUNTRIES.find(c => c.code === countryCode);
-  const fact = COUNTRY_FACTS[countryCode];
+  const fact    = COUNTRY_FACTS[countryCode];
   if (!country) { setTimeout(onDone, 400); return; }
 
+  // Backdrop
+  const overlay = document.createElement('div');
+  overlay.className = 'fact-overlay';
+  document.body.appendChild(overlay);
+  factOverlayEl = overlay;
+
+  // Card
   const card = document.createElement('div');
   card.className = 'fact-card';
+  card.style.setProperty('--fact-duration', (FACT_DURATION / 1000) + 's');
   card.innerHTML = \`
-    <img class="fc-flag" src="\${flagUrl(countryCode)}" alt="\${country.name}">
-    <div class="fc-body">
-      <div class="fc-label">Did you know?</div>
-      <div class="fc-country">\${country.name}</div>
-      <div class="fc-text">\${fact || 'One of the world\\'s ' + country.continent + ' nations.'}</div>
+    <div class="fact-card-top">
+      <img class="fc-flag" src="\${flagUrl(countryCode)}" alt="\${country.name}">
+      <div class="fc-body">
+        <div class="fc-label">Did you know?</div>
+        <div class="fc-country">\${country.name}</div>
+      </div>
     </div>
+    <div class="fc-divider"></div>
+    <div class="fc-text">\${fact || country.name + ' is located in ' + country.continent + '.'}</div>
+    <div class="fc-timer-bar"><div class="fc-timer-fill"></div></div>
   \`;
   document.body.appendChild(card);
   factCardEl = card;
 
-  // Auto-dismiss after 2.5 s then advance
+  // Dismiss on click (for impatient players)
+  overlay.addEventListener('click', () => dismissFactCard(onDone));
+  card.addEventListener('click',    () => dismissFactCard(onDone));
+
+  // Auto-dismiss after FACT_DURATION
   setTimeout(() => {
-    if (factCardEl === card) {
-      card.classList.add('slide-down');
-      setTimeout(() => {
-        card.remove();
-        if (factCardEl === card) factCardEl = null;
-        onDone();
-      }, 300);
-    }
-  }, 2500);
+    if (factCardEl === card) dismissFactCard(onDone);
+  }, FACT_DURATION);
+}
+
+function dismissFactCard(onDone) {
+  const card    = factCardEl;
+  const overlay = factOverlayEl;
+  if (!card) return;
+
+  factCardEl    = null;
+  factOverlayEl = null;
+
+  card.classList.add('slide-down');
+  if (overlay) overlay.classList.add('fade-out');
+
+  setTimeout(() => {
+    card.remove();
+    if (overlay) overlay.remove();
+    if (onDone) onDone();
+  }, 350);
 }
 
 function hideFactCard() {
-  if (factCardEl) {
-    factCardEl.remove();
-    factCardEl = null;
-  }
+  if (factCardEl)    { factCardEl.remove();    factCardEl    = null; }
+  if (factOverlayEl) { factOverlayEl.remove(); factOverlayEl = null; }
 }
 
 // ─── localStorage stats helpers ──────────────────────────────────────────────
