@@ -1094,7 +1094,7 @@ async function loadWorldData() {
   if (worldGeoData) return worldGeoData;
   const r = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
   const topo = await r.json();
-  worldGeoData = (window as any).topojson.feature(topo, topo.objects.countries).features;
+  worldGeoData = window['topojson'].feature(topo, topo.objects.countries).features;
   return worldGeoData;
 }
 
