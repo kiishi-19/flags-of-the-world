@@ -500,12 +500,12 @@ export function getHTML(): string {
         <div class="diff-card diff-easy selected" id="sp-diff-easy" onclick="setDifficulty('sp','easy')">
           <span class="dc-icon">🟢</span>
           <div class="dc-label">Easy</div>
-          <div class="dc-sub">20s · 10 questions<br>Options from mixed regions</div>
+          <div class="dc-sub">20s · 10 questions<br>Random options from your region</div>
         </div>
         <div class="diff-card diff-medium" id="sp-diff-medium" onclick="setDifficulty('sp','medium')">
           <span class="dc-icon">🟡</span>
           <div class="dc-label">Medium</div>
-          <div class="dc-sub">15s · 20 questions<br>Options from same continent</div>
+          <div class="dc-sub">15s · 20 questions<br>Same continent options</div>
         </div>
         <div class="diff-card diff-hard" id="sp-diff-hard" onclick="setDifficulty('sp','hard')">
           <span class="dc-icon">🔴</span>
@@ -1185,22 +1185,43 @@ function generateQuestions(total, continent, difficulty = 'medium', shapesOnly =
 
   return shuffled.slice(0, Math.min(total, shuffled.length)).map(correct => {
     let wrongPool;
-    if (difficulty === 'easy') {
-      // Options from different continents — visually very different
-      wrongPool = ALL_COUNTRIES.filter(c => c.code !== correct.code && c.continent !== correct.continent);
-      if (wrongPool.length < 3) wrongPool = ALL_COUNTRIES.filter(c => c.code !== correct.code);
-    } else if (difficulty === 'hard') {
-      // Similar-looking flags first, then same continent to fill gaps
-      const similar = (SIMILAR_FLAGS[correct.code] || [])
-        .map(code => ALL_COUNTRIES.find(c => c.code === code)).filter(Boolean);
-      const sameContinent = ALL_COUNTRIES.filter(c => c.code !== correct.code && c.continent === correct.continent);
-      wrongPool = [...similar, ...sameContinent].filter((c,i,a) => a.findIndex(x=>x.code===c.code)===i);
-      if (wrongPool.length < 3) wrongPool = [...wrongPool, ...ALL_COUNTRIES.filter(c=>c.code!==correct.code)].filter((c,i,a)=>a.findIndex(x=>x.code===c.code)===i);
+
+    if (continent !== 'all') {
+      // ── Specific region selected ──────────────────────────────────
+      // Wrong options ALWAYS come from the same continent the user picked.
+      // Difficulty only changes how similar those options are.
+      if (difficulty === 'hard') {
+        // Prefer similar-looking flags that are also in the selected continent
+        const similar = (SIMILAR_FLAGS[correct.code] || [])
+          .map(code => ALL_COUNTRIES.find(c => c.code === code))
+          .filter(c => c && c.continent === correct.continent);
+        const rest = pool.filter(c => c.code !== correct.code);
+        wrongPool = [...similar, ...rest].filter((c,i,a) => a.findIndex(x => x.code === c.code) === i);
+      } else {
+        // Easy & Medium within a continent: just random flags from that continent
+        wrongPool = pool.filter(c => c.code !== correct.code);
+      }
     } else {
-      // Medium: same continent
-      wrongPool = ALL_COUNTRIES.filter(c => c.code !== correct.code && c.continent === correct.continent);
-      if (wrongPool.length < 3) wrongPool = ALL_COUNTRIES.filter(c => c.code !== correct.code);
+      // ── "All" regions selected ────────────────────────────────────
+      // Now difficulty can meaningfully change which continents options come from.
+      if (difficulty === 'easy') {
+        // Options from DIFFERENT continents — visually very distinct
+        wrongPool = ALL_COUNTRIES.filter(c => c.code !== correct.code && c.continent !== correct.continent);
+        if (wrongPool.length < 3) wrongPool = ALL_COUNTRIES.filter(c => c.code !== correct.code);
+      } else if (difficulty === 'hard') {
+        // Similar-looking flags first, then same continent to fill gaps
+        const similar = (SIMILAR_FLAGS[correct.code] || [])
+          .map(code => ALL_COUNTRIES.find(c => c.code === code)).filter(Boolean);
+        const sameContinent = ALL_COUNTRIES.filter(c => c.code !== correct.code && c.continent === correct.continent);
+        wrongPool = [...similar, ...sameContinent].filter((c,i,a) => a.findIndex(x => x.code === c.code) === i);
+        if (wrongPool.length < 3) wrongPool = [...wrongPool, ...ALL_COUNTRIES.filter(c => c.code !== correct.code)].filter((c,i,a) => a.findIndex(x => x.code === c.code) === i);
+      } else {
+        // Medium: same continent
+        wrongPool = ALL_COUNTRIES.filter(c => c.code !== correct.code && c.continent === correct.continent);
+        if (wrongPool.length < 3) wrongPool = ALL_COUNTRIES.filter(c => c.code !== correct.code);
+      }
     }
+
     const wrong = shuffle(wrongPool).slice(0, 3);
     const options = shuffle([...wrong, correct]);
     return { correct, options };
