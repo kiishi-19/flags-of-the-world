@@ -2,6 +2,7 @@ name = "flags-of-the-world"
 main = "src/index.ts"
 compatibility_date = "2024-12-30"
 compatibility_flags = ["nodejs_compat"]
+account_id = "6bea4abeca519658cb8ba205c96c1f70"
 
 [durable_objects]
 bindings = [
