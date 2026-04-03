@@ -806,9 +806,7 @@ window.addEventListener('DOMContentLoaded', () => {
 // ═══════════════════════════════════════════════════════════════════
 // HOME STATS
 // ═══════════════════════════════════════════════════════════════════
-function loadHomeStats() {
-  // Read from localStorage — instant, no network needed
-  const stats = getLocalStats();
+function applyHomeStats(stats) {
   if (!stats) return;
   document.getElementById('hs-games').textContent = stats.totalGames;
   document.getElementById('hs-best').textContent = stats.bestScore.toLocaleString();
@@ -816,6 +814,24 @@ function loadHomeStats() {
     ? Math.round((stats.totalCorrect / stats.totalAnswered) * 100) + '%'
     : '—';
   document.getElementById('hs-accuracy').textContent = acc;
+}
+
+async function loadHomeStats() {
+  // Show local data immediately (instant)
+  applyHomeStats(getLocalStats());
+
+  // Then fetch from server and update if server has more complete data
+  try {
+    const res = await fetch(\`/api/stats/\${encodeURIComponent(state.username)}\`);
+    if (res.ok) {
+      const serverStats = await res.json();
+      if (serverStats && serverStats.totalGames > 0) {
+        const merged = mergeStats(getLocalStats(), serverStats);
+        try { localStorage.setItem(LOCAL_STATS_KEY(), JSON.stringify(merged)); } catch {}
+        applyHomeStats(merged);
+      }
+    }
+  } catch(e) { /* server unavailable, local data already shown */ }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1403,79 +1419,129 @@ function showMPFinalResults(gs) {
 // ═══════════════════════════════════════════════════════════════════
 // STATS
 // ═══════════════════════════════════════════════════════════════════
-async function loadStats() {
-  // Read from localStorage first (always available)
-  const stats = getLocalStats();
-  if (!stats || stats.totalGames === 0) { showNoStats(); return; }
 
-  try {
-    document.getElementById('no-stats-msg').classList.add('hidden');
-    document.getElementById('weak-flags-section').classList.remove('hidden');
+// Merge two stat objects — takes the one with more games as base,
+// then folds in any flag-level data the other has that was missed.
+function mergeStats(a, b) {
+  if (!a && !b) return null;
+  if (!a) return b;
+  if (!b) return a;
 
-    const acc = stats.totalAnswered > 0
-      ? Math.round((stats.totalCorrect / stats.totalAnswered) * 100)
-      : 0;
-    const avgScore = stats.totalGames > 0 ? Math.round(stats.totalScore / stats.totalGames) : 0;
+  // Use the object with more recorded games as the base (more complete history)
+  const [base, extra] = a.totalGames >= b.totalGames ? [a, b] : [b, a];
 
-    document.getElementById('stats-overview').innerHTML = \`
-      <div class="stat-card"><div class="sc-val">\${stats.totalGames}</div><div class="sc-lbl">Games Played</div></div>
-      <div class="stat-card"><div class="sc-val">\${stats.bestScore.toLocaleString()}</div><div class="sc-lbl">Best Score</div></div>
-      <div class="stat-card"><div class="sc-val">\${acc}%</div><div class="sc-lbl">Overall Accuracy</div></div>
-      <div class="stat-card"><div class="sc-val">\${avgScore.toLocaleString()}</div><div class="sc-lbl">Avg Score</div></div>
-      <div class="stat-card"><div class="sc-val">\${stats.totalCorrect}</div><div class="sc-lbl">Total Correct</div></div>
-      <div class="stat-card"><div class="sc-val">\${stats.totalAnswered}</div><div class="sc-lbl">Total Answered</div></div>
-    \`;
+  // Deep-merge flagStats: add counts from the extra source for any flags
+  // that the base doesn't already have a more complete record of
+  const merged = JSON.parse(JSON.stringify(base)); // deep clone
+  for (const [code, extraStat] of Object.entries(extra.flagStats || {})) {
+    if (!merged.flagStats[code]) {
+      merged.flagStats[code] = extraStat;
+    } else {
+      // Only add if extra has more attempts recorded for this flag
+      const baseTotal = merged.flagStats[code].correct + merged.flagStats[code].wrong;
+      const extraTotal = extraStat.correct + extraStat.wrong;
+      if (extraTotal > baseTotal) {
+        merged.flagStats[code] = extraStat;
+      }
+    }
+  }
+  return merged;
+}
 
-    // Score chart
-    const history = stats.history.slice(0, 20).reverse();
-    const maxScore = Math.max(...history.map(h => h.score), 1);
-    document.getElementById('score-chart').innerHTML = history.map((h, i) => \`
-      <div class="chart-bar-wrap">
-        <div class="chart-bar" style="height:\${Math.max(4, (h.score / maxScore) * 100)}px;" title="\${h.score.toLocaleString()} pts"></div>
-        <div class="chart-bar-lbl">\${formatDate(h.date)}</div>
-      </div>
-    \`).join('');
+function renderStats(stats) {
+  document.getElementById('no-stats-msg').classList.add('hidden');
+  document.getElementById('weak-flags-section').classList.remove('hidden');
 
-    // Accuracy chart
-    document.getElementById('accuracy-chart').innerHTML = history.map(h => {
-      const a = h.total > 0 ? Math.round((h.correct / h.total) * 100) : 0;
-      const color = a >= 80 ? 'var(--green)' : a >= 60 ? 'var(--yellow)' : 'var(--red)';
-      return \`<div class="chart-bar-wrap">
-        <div class="chart-bar" style="height:\${Math.max(4, a)}px;background:\${color};" title="\${a}%"></div>
-        <div class="chart-bar-lbl">\${a}%</div>
+  const acc = stats.totalAnswered > 0
+    ? Math.round((stats.totalCorrect / stats.totalAnswered) * 100)
+    : 0;
+  const avgScore = stats.totalGames > 0 ? Math.round(stats.totalScore / stats.totalGames) : 0;
+
+  document.getElementById('stats-overview').innerHTML = \`
+    <div class="stat-card"><div class="sc-val">\${stats.totalGames}</div><div class="sc-lbl">Games Played</div></div>
+    <div class="stat-card"><div class="sc-val">\${stats.bestScore.toLocaleString()}</div><div class="sc-lbl">Best Score</div></div>
+    <div class="stat-card"><div class="sc-val">\${acc}%</div><div class="sc-lbl">Overall Accuracy</div></div>
+    <div class="stat-card"><div class="sc-val">\${avgScore.toLocaleString()}</div><div class="sc-lbl">Avg Score</div></div>
+    <div class="stat-card"><div class="sc-val">\${stats.totalCorrect}</div><div class="sc-lbl">Total Correct</div></div>
+    <div class="stat-card"><div class="sc-val">\${stats.totalAnswered}</div><div class="sc-lbl">Total Answered</div></div>
+  \`;
+
+  const history = stats.history.slice(0, 20).reverse();
+  const maxScore = Math.max(...history.map(h => h.score), 1);
+  document.getElementById('score-chart').innerHTML = history.map(h => \`
+    <div class="chart-bar-wrap">
+      <div class="chart-bar" style="height:\${Math.max(4, (h.score / maxScore) * 100)}px;" title="\${h.score.toLocaleString()} pts"></div>
+      <div class="chart-bar-lbl">\${formatDate(h.date)}</div>
+    </div>
+  \`).join('');
+
+  document.getElementById('accuracy-chart').innerHTML = history.map(h => {
+    const a = h.total > 0 ? Math.round((h.correct / h.total) * 100) : 0;
+    const color = a >= 80 ? 'var(--green)' : a >= 60 ? 'var(--yellow)' : 'var(--red)';
+    return \`<div class="chart-bar-wrap">
+      <div class="chart-bar" style="height:\${Math.max(4, a)}px;background:\${color};" title="\${a}%"></div>
+      <div class="chart-bar-lbl">\${a}%</div>
+    </div>\`;
+  }).join('');
+
+  const flagStats = stats.flagStats || {};
+  const worstFlags = Object.entries(flagStats)
+    .map(([code, s]) => {
+      const total = s.correct + s.wrong;
+      const acc = total > 0 ? Math.round((s.correct / total) * 100) : 0;
+      return { code, acc, total, ...s };
+    })
+    .filter(f => f.total >= 2)
+    .sort((a, b) => a.acc - b.acc)
+    .slice(0, 12);
+
+  if (worstFlags.length > 0) {
+    document.getElementById('worst-flags').innerHTML = worstFlags.map(f => {
+      const country = ALL_COUNTRIES.find(c => c.code === f.code);
+      const color = f.acc >= 80 ? 'var(--green)' : f.acc >= 50 ? 'var(--yellow)' : 'var(--red)';
+      return \`<div class="worst-flag-item">
+        <img src="\${flagUrl(f.code)}" alt="\${country?.name}" loading="lazy">
+        <div class="wf-name">\${country?.name || f.code}</div>
+        <div class="wf-accuracy" style="color:\${color}">\${f.acc}%</div>
+        <div class="accuracy-bar"><div class="accuracy-fill" style="width:\${f.acc}%;background:\${color};"></div></div>
+        <div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;">\${f.correct}/\${f.total} correct</div>
       </div>\`;
     }).join('');
+  } else {
+    document.getElementById('worst-flags').innerHTML = '<p class="text-dim text-sm">Play more games to see your weak spots!</p>';
+  }
+}
 
-    // Worst flags
-    const flagStats = stats.flagStats || {};
-    const worstFlags = Object.entries(flagStats)
-      .map(([code, s]) => {
-        const total = s.correct + s.wrong;
-        const acc = total > 0 ? Math.round((s.correct / total) * 100) : 0;
-        return { code, acc, total, ...s };
-      })
-      .filter(f => f.total >= 2)
-      .sort((a, b) => a.acc - b.acc)
-      .slice(0, 12);
+async function loadStats() {
+  const localStats = getLocalStats();
 
-    if (worstFlags.length > 0) {
-      document.getElementById('worst-flags').innerHTML = worstFlags.map(f => {
-        const country = ALL_COUNTRIES.find(c => c.code === f.code);
-        const color = f.acc >= 80 ? 'var(--green)' : f.acc >= 50 ? 'var(--yellow)' : 'var(--red)';
-        return \`<div class="worst-flag-item">
-          <img src="\${flagUrl(f.code)}" alt="\${country?.name}" loading="lazy">
-          <div class="wf-name">\${country?.name || f.code}</div>
-          <div class="wf-accuracy" style="color:\${color}">\${f.acc}%</div>
-          <div class="accuracy-bar"><div class="accuracy-fill" style="width:\${f.acc}%;background:\${color};"></div></div>
-          <div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;">\${f.correct}/\${f.total} correct</div>
-        </div>\`;
-      }).join('');
-    } else {
-      document.getElementById('worst-flags').innerHTML = '<p class="text-dim text-sm">Play more games to see your weak spots!</p>';
+  // Show local data immediately if we have it (no wait)
+  if (localStats && localStats.totalGames > 0) {
+    renderStats(localStats);
+  }
+
+  // Always fetch from server — it may have data from other devices/browsers
+  // or games played before the localStorage fix was applied
+  try {
+    const res = await fetch(\`/api/stats/\${encodeURIComponent(state.username)}\`);
+    if (res.ok) {
+      const serverStats = await res.json();
+      if (serverStats && serverStats.totalGames > 0) {
+        // Merge: whichever has more games wins as base, then fold in flag data from the other
+        const merged = mergeStats(localStats, serverStats);
+        // Write merged result back to localStorage so future loads are complete
+        try { localStorage.setItem(LOCAL_STATS_KEY(), JSON.stringify(merged)); } catch {}
+        // Re-render with the merged (more complete) data
+        renderStats(merged);
+        return;
+      }
     }
-
   } catch(e) {
-    console.error('Stats render error:', e);
+    console.warn('Server stats fetch failed, using local cache only:', e.message);
+  }
+
+  // If server had nothing and local had nothing either
+  if (!localStats || localStats.totalGames === 0) {
     showNoStats();
   }
 }
