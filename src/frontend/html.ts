@@ -1,7 +1,10 @@
 import { COUNTRY_FACTS } from './facts';
+import { COUNTRY_BORDERS, COUNTRY_SUBREGION } from './hints';
 
 export function getHTML(): string {
-  const factsJSON = JSON.stringify(COUNTRY_FACTS);
+  const factsJSON    = JSON.stringify(COUNTRY_FACTS);
+  const bordersJSON  = JSON.stringify(COUNTRY_BORDERS);
+  const subregionJSON = JSON.stringify(COUNTRY_SUBREGION);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -376,6 +379,35 @@ export function getHTML(): string {
   @keyframes spin { to { transform: rotate(360deg); } }
   .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
 
+  /* ─── Shape Hints ───────────────────────────────────────────────── */
+  .shape-hints {
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    width: min(480px, 90vw); margin-bottom: 8px;
+  }
+  .hint-buttons { display: flex; gap: 10px; }
+  .hint-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 18px; border-radius: 20px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text-dim); font-size: 0.85rem;
+    font-weight: 600; cursor: pointer; transition: all 0.15s;
+  }
+  .hint-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .hint-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .hint-btn .hint-cost { font-size: 0.75rem; color: var(--red); margin-left: 2px; }
+  .hint-revealed {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+  }
+  .hint-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 0.88rem;
+  }
+  .hint-row:last-child { border-bottom: none; }
+  .hint-row .hr-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+  .hint-row .hr-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+  .hint-row .hr-val { color: var(--text); line-height: 1.4; }
+  .hint-penalty { font-size: 0.78rem; color: var(--red); text-align: center; }
+
   /* ─── Continent Hint (Easy mode) ────────────────────────────────── */
   .continent-hint {
     display: inline-flex; align-items: center; gap: 6px;
@@ -687,8 +719,21 @@ export function getHTML(): string {
     </div>
   </div>
 
-  <!-- Continent hint (Easy mode) -->
+  <!-- Continent hint (Easy mode flag quiz) -->
   <div id="continent-hint" class="continent-hint hidden"></div>
+
+  <!-- Shape hints panel (shapes mode only) -->
+  <div id="shape-hints" class="shape-hints hidden">
+    <div class="hint-buttons">
+      <button class="hint-btn" id="hint-btn-region"  onclick="revealHint('region')">
+        📍 Region <span class="hint-cost" id="hint-cost-region"></span>
+      </button>
+      <button class="hint-btn" id="hint-btn-borders" onclick="revealHint('borders')">
+        🗺️ Borders <span class="hint-cost" id="hint-cost-borders"></span>
+      </button>
+    </div>
+    <div class="hint-revealed hidden" id="hint-revealed"></div>
+  </div>
 
   <!-- Flag / Shape + Timer -->
   <div class="flag-container">
@@ -1148,6 +1193,89 @@ function renderCountryShape(canvas, alpha2) {
   return true;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// BORDERS & SUBREGIONS (embedded from hints.ts)
+// ═══════════════════════════════════════════════════════════════════
+const COUNTRY_BORDERS  = ${bordersJSON};
+const COUNTRY_SUBREGION = ${subregionJSON};
+
+// ─── Hint system ─────────────────────────────────────────────────────────────
+// Hints are only shown in shapes mode.
+// Easy  → free, no penalty
+// Medium → each hint costs 300 pts deducted from the correct-answer score
+// Hard  → no hints (buttons hidden)
+const HINT_COST = { easy: 0, medium: 300, hard: 0 };
+
+let hintsUsed = { region: false, borders: false };
+
+function initHints() {
+  hintsUsed = { region: false, borders: false };
+  const sp = state.sp;
+  const isShapes = sp.gameMode === 'shapes';
+  const isHard   = sp.difficulty === 'hard';
+
+  const panel = document.getElementById('shape-hints');
+  if (!isShapes || isHard) { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+
+  // Reset button states
+  ['region','borders'].forEach(t => {
+    const btn = document.getElementById(\`hint-btn-\${t}\`);
+    btn.disabled = false;
+    btn.classList.remove('used');
+    const costSpan = document.getElementById(\`hint-cost-\${t}\`);
+    const cost = HINT_COST[sp.difficulty] || 0;
+    costSpan.textContent = cost > 0 ? \`(-\${cost})\` : '';
+  });
+
+  // Clear revealed hints
+  const box = document.getElementById('hint-revealed');
+  box.innerHTML = '';
+  box.classList.add('hidden');
+}
+
+function revealHint(type) {
+  if (hintsUsed[type]) return;
+  hintsUsed[type] = true;
+
+  const btn  = document.getElementById(\`hint-btn-\${type}\`);
+  btn.disabled = true;
+
+  const code = state.sp.currentCorrect;
+  const box  = document.getElementById('hint-revealed');
+  box.classList.remove('hidden');
+
+  if (type === 'region') {
+    const region = COUNTRY_SUBREGION[code] || state.sp.pool[state.sp.current]?.correct?.continent || '—';
+    appendHintRow(box, '📍', 'Geographic region', region);
+  } else {
+    const borders = COUNTRY_BORDERS[code] || [];
+    if (borders.length === 0) {
+      appendHintRow(box, '🌊', 'Land borders', 'No land borders — island nation');
+    } else {
+      const names = borders
+        .map(b => ALL_COUNTRIES.find(c => c.code === b)?.name)
+        .filter(Boolean).join(', ');
+      appendHintRow(box, '🗺️', 'Borders', names);
+    }
+  }
+}
+
+function appendHintRow(box, icon, label, value) {
+  const row = document.createElement('div');
+  row.className = 'hint-row';
+  row.innerHTML = \`
+    <span class="hr-icon">\${icon}</span>
+    <div><div class="hr-label">\${label}</div><div class="hr-val">\${value}</div></div>
+  \`;
+  box.appendChild(row);
+}
+
+function getHintPenalty() {
+  const cost = HINT_COST[state.sp.difficulty] || 0;
+  return (hintsUsed.region ? cost : 0) + (hintsUsed.borders ? cost : 0);
+}
+
 // Speed tier helpers
 function getSpeedTier(timeElapsed, timeLimit) {
   const pct = timeElapsed / timeLimit;
@@ -1283,17 +1411,20 @@ function loadQuestion() {
   document.getElementById('streak-count').textContent = sp.streak;
   document.getElementById('streak-badge').style.display = sp.streak >= 2 ? 'inline-flex' : 'none';
 
-  // Continent hint — shown on Easy mode
-  const hintEl = document.getElementById('continent-hint');
-  if (sp.difficulty === 'easy') {
+  // Continent hint — shown on Easy mode (flag quiz only)
+  const hintEl   = document.getElementById('continent-hint');
+  const isShapes = sp.gameMode === 'shapes';
+  if (!isShapes && sp.difficulty === 'easy') {
     hintEl.textContent = '📍 ' + q.correct.continent;
     hintEl.classList.remove('hidden');
   } else {
     hintEl.classList.add('hidden');
   }
 
+  // Reset hint panel for this question
+  initHints();
+
   // Flag or Shape
-  const isShapes = sp.gameMode === 'shapes';
   const img    = document.getElementById('flag-img');
   const canvas = document.getElementById('shape-canvas');
   if (isShapes) {
@@ -1386,9 +1517,10 @@ function handleSPAnswer(code, btn) {
 
   // Score — speed tier determines bonus
   if (isCorrect) {
-    const tier = getSpeedTier(timeElapsed, sp.timePerQ);
+    const tier        = getSpeedTier(timeElapsed, sp.timePerQ);
     const streakBonus = sp.streak * 150;
-    const earned = 500 + tier.bonus + streakBonus;
+    const hintPenalty = getHintPenalty();
+    const earned      = Math.max(100, 500 + tier.bonus + streakBonus - hintPenalty);
     sp.score += earned;
     sp.streak++;
     sp.bestStreak = Math.max(sp.bestStreak, sp.streak);
