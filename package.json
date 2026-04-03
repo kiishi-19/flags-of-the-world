@@ -1,0 +1,16 @@
+{
+  "name": "flags-of-the-world",
+  "version": "1.0.0",
+  "description": "Interactive flag quiz game with multiplayer support",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241230.0",
+    "typescript": "^5.3.3",
+    "wrangler": "^3.93.0"
+  }
+}
