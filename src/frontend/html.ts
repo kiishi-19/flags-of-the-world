@@ -8,6 +8,7 @@ export function getHTML(): string {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Flags of the World</title>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
 <style>
   /* ─── Reset & Base ─────────────────────────────────────────────── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -342,6 +343,47 @@ export function getHTML(): string {
     .home-stats { grid-template-columns: 1fr; }
   }
 
+  /* ─── Difficulty Badges ─────────────────────────────────────────── */
+  .diff-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .diff-card {
+    border: 2px solid var(--border); border-radius: 10px; padding: 14px 10px;
+    text-align: center; cursor: pointer; transition: all 0.15s; background: var(--surface2);
+  }
+  .diff-card:hover { transform: translateY(-2px); }
+  .diff-card .dc-icon  { font-size: 1.6rem; display: block; margin-bottom: 6px; }
+  .diff-card .dc-label { font-weight: 700; font-size: 0.95rem; }
+  .diff-card .dc-sub   { font-size: 0.75rem; color: var(--text-dim); margin-top: 3px; }
+  .diff-card.selected  { border-color: var(--accent); background: rgba(0,212,255,0.07); }
+  .diff-easy   { --dc: #10b981; }
+  .diff-medium { --dc: #f59e0b; }
+  .diff-hard   { --dc: #ef4444; }
+  .diff-card.selected .dc-label { color: var(--dc, var(--accent)); }
+
+  /* ─── Shape Canvas ───────────────────────────────────────────────── */
+  .shape-canvas {
+    width: min(480px, 90vw); height: 260px;
+    border-radius: 12px; border: 2px solid var(--border);
+    box-shadow: 0 8px 48px rgba(0,0,0,0.6);
+    background: rgba(7,15,30,0.9);
+    display: block;
+  }
+  .shape-loading {
+    width: min(480px, 90vw); height: 260px; border-radius: 12px;
+    border: 2px solid var(--border); background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-dim); font-size: 0.9rem; gap: 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+
+  /* ─── Continent Hint (Easy mode) ────────────────────────────────── */
+  .continent-hint {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.3);
+    border-radius: 20px; padding: 4px 14px; font-size: 0.82rem;
+    color: var(--green); font-weight: 600; margin-bottom: 14px;
+  }
+
   /* ─── Animations & Utils ─────────────────────────────────────────── */
   .glow { text-shadow: 0 0 20px rgba(0,212,255,0.5); }
   .text-accent { color: var(--accent); }
@@ -419,16 +461,21 @@ export function getHTML(): string {
       <div class="home-stat"><div class="val" id="hs-best">0</div><div class="lbl">Best Score</div></div>
       <div class="home-stat"><div class="val" id="hs-accuracy">—</div><div class="lbl">Accuracy</div></div>
     </div>
-    <div class="mode-grid">
+    <div class="mode-grid" style="grid-template-columns:1fr 1fr 1fr;">
       <div class="mode-card" onclick="showScreen('screen-sp-setup')">
         <span class="icon">🎯</span>
-        <h3>Single Player</h3>
-        <p>Practice at your own pace and track your progress</p>
+        <h3>Flag Quiz</h3>
+        <p>Identify flags from around the world</p>
+      </div>
+      <div class="mode-card" onclick="showScreen('screen-shapes-setup')">
+        <span class="icon">🗺️</span>
+        <h3>Shape Quiz</h3>
+        <p>Identify countries by their shape</p>
       </div>
       <div class="mode-card" onclick="showScreen('screen-mp-setup')">
         <span class="icon">⚡</span>
         <h3>Multiplayer</h3>
-        <p>Compete with friends in real-time rooms</p>
+        <p>Compete with friends in real-time</p>
       </div>
     </div>
     <div style="display:flex;gap:10px;margin-top:16px;">
@@ -445,25 +492,26 @@ export function getHTML(): string {
   <div class="card">
     <div class="setup-header">
       <span class="icon">🎯</span>
-      <h2>Single Player</h2>
-      <p class="text-dim mt-2">Customize your practice session</p>
+      <h2>Flag Quiz</h2>
+      <p class="text-dim mt-2">Choose your difficulty</p>
     </div>
     <div class="form-group">
-      <label>Number of Questions</label>
-      <div class="option-pills" id="sp-questions-pills">
-        <div class="pill" data-val="10" onclick="selectPill(this,'sp-questions')">10</div>
-        <div class="pill selected" data-val="20" onclick="selectPill(this,'sp-questions')">20</div>
-        <div class="pill" data-val="30" onclick="selectPill(this,'sp-questions')">30</div>
-        <div class="pill" data-val="50" onclick="selectPill(this,'sp-questions')">50</div>
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Time per Question</label>
-      <div class="option-pills" id="sp-time-pills">
-        <div class="pill" data-val="10" onclick="selectPill(this,'sp-time')">10s</div>
-        <div class="pill selected" data-val="15" onclick="selectPill(this,'sp-time')">15s</div>
-        <div class="pill" data-val="20" onclick="selectPill(this,'sp-time')">20s</div>
-        <div class="pill" data-val="30" onclick="selectPill(this,'sp-time')">30s</div>
+      <div class="diff-grid">
+        <div class="diff-card diff-easy selected" id="sp-diff-easy" onclick="setDifficulty('sp','easy')">
+          <span class="dc-icon">🟢</span>
+          <div class="dc-label">Easy</div>
+          <div class="dc-sub">20s · 10 questions<br>Options from mixed regions</div>
+        </div>
+        <div class="diff-card diff-medium" id="sp-diff-medium" onclick="setDifficulty('sp','medium')">
+          <span class="dc-icon">🟡</span>
+          <div class="dc-label">Medium</div>
+          <div class="dc-sub">15s · 20 questions<br>Options from same continent</div>
+        </div>
+        <div class="diff-card diff-hard" id="sp-diff-hard" onclick="setDifficulty('sp','hard')">
+          <span class="dc-icon">🔴</span>
+          <div class="dc-label">Hard</div>
+          <div class="dc-sub">8s · 30 questions<br>Similar-looking flags</div>
+        </div>
       </div>
     </div>
     <div class="form-group">
@@ -479,7 +527,54 @@ export function getHTML(): string {
     </div>
     <div style="display:flex;gap:12px;margin-top:8px;">
       <button class="btn btn-secondary" onclick="showHome()">Back</button>
-      <button class="btn btn-primary btn-full" onclick="startSinglePlayer()">Start Game</button>
+      <button class="btn btn-primary btn-full" onclick="startSinglePlayer('flags')">Start Game</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCREEN: SHAPES SETUP
+═══════════════════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-shapes-setup">
+  <div class="card">
+    <div class="setup-header">
+      <span class="icon">🗺️</span>
+      <h2>Shape Quiz</h2>
+      <p class="text-dim mt-2">Identify countries by their silhouette</p>
+    </div>
+    <div class="form-group">
+      <div class="diff-grid">
+        <div class="diff-card diff-easy selected" id="sh-diff-easy" onclick="setDifficulty('sh','easy')">
+          <span class="dc-icon">🟢</span>
+          <div class="dc-label">Easy</div>
+          <div class="dc-sub">20s · 10 questions<br>Continent shown as hint</div>
+        </div>
+        <div class="diff-card diff-medium" id="sh-diff-medium" onclick="setDifficulty('sh','medium')">
+          <span class="dc-icon">🟡</span>
+          <div class="dc-label">Medium</div>
+          <div class="dc-sub">15s · 20 questions<br>No hints</div>
+        </div>
+        <div class="diff-card diff-hard" id="sh-diff-hard" onclick="setDifficulty('sh','hard')">
+          <span class="dc-icon">🔴</span>
+          <div class="dc-label">Hard</div>
+          <div class="dc-sub">8s · 30 questions<br>Same-continent options</div>
+        </div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Region Filter</label>
+      <div class="option-pills" id="sh-continent-pills">
+        <div class="pill selected" data-val="all" onclick="selectPill(this,'sh-continent')">All</div>
+        <div class="pill" data-val="Africa" onclick="selectPill(this,'sh-continent')">Africa</div>
+        <div class="pill" data-val="Americas" onclick="selectPill(this,'sh-continent')">Americas</div>
+        <div class="pill" data-val="Asia" onclick="selectPill(this,'sh-continent')">Asia</div>
+        <div class="pill" data-val="Europe" onclick="selectPill(this,'sh-continent')">Europe</div>
+        <div class="pill" data-val="Oceania" onclick="selectPill(this,'sh-continent')">Oceania</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:8px;">
+      <button class="btn btn-secondary" onclick="showHome()">Back</button>
+      <button class="btn btn-primary btn-full" onclick="startSinglePlayer('shapes')">Start Game</button>
     </div>
   </div>
 </div>
@@ -501,19 +596,25 @@ export function getHTML(): string {
     <!-- Create -->
     <div id="mp-create">
       <div class="form-group">
+        <label>Difficulty</label>
+        <div class="diff-grid">
+          <div class="diff-card diff-easy" id="mp-diff-easy" onclick="setDifficulty('mp','easy')">
+            <span class="dc-icon">🟢</span><div class="dc-label">Easy</div><div class="dc-sub">20s · mixed options</div>
+          </div>
+          <div class="diff-card diff-medium selected" id="mp-diff-medium" onclick="setDifficulty('mp','medium')">
+            <span class="dc-icon">🟡</span><div class="dc-label">Medium</div><div class="dc-sub">15s · same continent</div>
+          </div>
+          <div class="diff-card diff-hard" id="mp-diff-hard" onclick="setDifficulty('mp','hard')">
+            <span class="dc-icon">🔴</span><div class="dc-label">Hard</div><div class="dc-sub">8s · similar flags</div>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
         <label>Questions</label>
         <div class="option-pills" id="mp-questions-pills">
           <div class="pill" data-val="10" onclick="selectPill(this,'mp-questions')">10</div>
           <div class="pill selected" data-val="15" onclick="selectPill(this,'mp-questions')">15</div>
           <div class="pill" data-val="20" onclick="selectPill(this,'mp-questions')">20</div>
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Time per Question</label>
-        <div class="option-pills" id="mp-time-pills">
-          <div class="pill" data-val="10" onclick="selectPill(this,'mp-time')">10s</div>
-          <div class="pill selected" data-val="15" onclick="selectPill(this,'mp-time')">15s</div>
-          <div class="pill" data-val="20" onclick="selectPill(this,'mp-time')">20s</div>
         </div>
       </div>
       <div class="form-group">
@@ -586,9 +687,13 @@ export function getHTML(): string {
     </div>
   </div>
 
-  <!-- Flag + Timer -->
+  <!-- Continent hint (Easy mode) -->
+  <div id="continent-hint" class="continent-hint hidden"></div>
+
+  <!-- Flag / Shape + Timer -->
   <div class="flag-container">
     <img id="flag-img" class="flag-img" src="" alt="Flag" />
+    <canvas id="shape-canvas" class="shape-canvas hidden" width="480" height="260"></canvas>
     <div class="timer-ring">
       <svg class="timer-svg" width="64" height="64" viewBox="0 0 64 64">
         <circle class="timer-bg" cx="32" cy="32" r="28" />
@@ -739,6 +844,7 @@ const state = {
 // Pill selections
 const pillState = {
   'sp-questions': '20', 'sp-time': '15', 'sp-continent': 'all',
+  'sh-continent': 'all',
   'mp-questions': '15', 'mp-time': '15', 'mp-continent': 'all',
 };
 
@@ -901,6 +1007,147 @@ function selectPill(el, group) {
 // ═══════════════════════════════════════════════════════════════════
 const COUNTRY_FACTS = ${factsJSON};
 
+// ═══════════════════════════════════════════════════════════════════
+// DIFFICULTY & SIMILAR FLAGS
+// ═══════════════════════════════════════════════════════════════════
+const DIFFICULTY_PRESETS = {
+  easy:   { questions: 10, timePerQ: 20, strategy: 'different_continent' },
+  medium: { questions: 20, timePerQ: 15, strategy: 'same_continent'      },
+  hard:   { questions: 30, timePerQ:  8, strategy: 'similar_flags'       },
+};
+
+// Flags that look visually similar — used for Hard mode wrong options
+const SIMILAR_FLAGS = {
+  ro:['td','ad'],          td:['ro','ad'],          // Romania ≈ Chad (nearly identical)
+  id:['mc','pl'],          mc:['id','pl'],          pl:['id','mc'],   // red/white pairs
+  ie:['ci'],               ci:['ie'],               // Ireland ↔ Ivory Coast (mirrored)
+  dk:['no','se','fi','is'],no:['dk','is','se'],     se:['fi','dk','no'],
+  fi:['se','ee','no'],     is:['no','dk'],          ee:['fi','lv'],
+  nl:['lu','ru','hr'],     lu:['nl','ru'],          ru:['nl','hr','sk'],
+  hr:['nl','ru','sk','si'],sk:['ru','hr','si'],     si:['sk','ru','hr'],
+  fr:['be','ml','it'],     be:['fr','de','ml'],     de:['be','et'],
+  it:['mx','hu'],          mx:['it'],               hu:['it','bg'],
+  et:['de','gn','cm'],     gn:['ml','sn','cm'],     ml:['gn','sn'],
+  sn:['ml','gn','cm'],     cm:['gn','sn','et'],     gh:['et','gn','ml'],
+  jo:['ps','ae'],          ps:['jo','ae'],          ae:['jo','ps','ye'],
+  ye:['sy','eg'],          sy:['ye','eg','ir'],     eg:['ye','sy'],
+  au:['nz','fj'],          nz:['au'],               fj:['au'],
+  pk:['my','tn'],          my:['pk'],               tn:['pk','tr'],
+  tr:['tn','az'],          az:['tr'],               ng:['ro','td'],
+  za:['zw','zb'],          lv:['ee','fr'],          lt:['ee','lv'],
+  bg:['hu'],               ir:['tj','ae'],          tj:['ir','af'],
+  af:['tj','ir'],          kz:['ru','az'],          mx:['it','do'],
+};
+
+// Difficulty selection (shared between flag quiz and shape quiz)
+const diffState = { sp: 'easy', sh: 'easy', mp: 'medium' };
+
+function setDifficulty(prefix, level) {
+  diffState[prefix] = level;
+  ['easy','medium','hard'].forEach(l => {
+    const el = document.getElementById(\`\${prefix}-diff-\${l}\`);
+    if (el) el.classList.toggle('selected', l === level);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// COUNTRY SHAPES (TopoJSON)
+// ═══════════════════════════════════════════════════════════════════
+// ISO 3166-1 numeric → alpha-2 (world-atlas uses numeric IDs)
+const ISO_NUM = {
+  4:'af',8:'al',12:'dz',20:'ad',24:'ao',28:'ag',32:'ar',36:'au',40:'at',
+  50:'bd',51:'am',52:'bb',56:'be',64:'bt',68:'bo',70:'ba',72:'bw',76:'br',
+  96:'bn',100:'bg',104:'mm',108:'bi',112:'by',116:'kh',120:'cm',124:'ca',
+  132:'cv',140:'cf',144:'lk',148:'td',152:'cl',156:'cn',170:'co',174:'km',
+  178:'cg',180:'cd',188:'cr',191:'hr',192:'cu',196:'cy',203:'cz',204:'bj',
+  208:'dk',212:'dm',214:'do',218:'ec',226:'gq',231:'et',232:'er',233:'ee',
+  242:'fj',246:'fi',250:'fr',262:'dj',266:'ga',268:'ge',270:'gm',276:'de',
+  288:'gh',296:'ki',300:'gr',308:'gd',320:'gt',324:'gn',328:'gy',332:'ht',
+  340:'hn',344:'hk',348:'hu',356:'in',360:'id',364:'ir',368:'iq',372:'ie',
+  376:'il',380:'it',384:'ci',388:'jm',392:'jp',398:'kz',400:'jo',404:'ke',
+  408:'kp',410:'kr',414:'kw',417:'kg',418:'la',422:'lb',426:'ls',428:'lv',
+  430:'lr',434:'ly',438:'li',440:'lt',442:'lu',450:'mg',454:'mw',458:'my',
+  462:'mv',466:'ml',470:'mt',478:'mr',480:'mu',484:'mx',492:'mc',496:'mn',
+  498:'md',499:'me',504:'ma',508:'mz',512:'om',516:'na',520:'nr',524:'np',
+  528:'nl',540:'nc',548:'vu',554:'nz',558:'ni',562:'ne',566:'ng',578:'no',
+  583:'fm',584:'mh',585:'pw',586:'pk',590:'pa',598:'pg',600:'py',604:'pe',
+  608:'ph',616:'pl',620:'pt',624:'gw',626:'tl',634:'qa',642:'ro',643:'ru',
+  646:'rw',659:'kn',662:'lc',670:'vc',678:'st',682:'sa',686:'sn',688:'rs',
+  694:'sl',702:'sg',703:'sk',704:'vn',705:'si',706:'so',710:'za',716:'zw',
+  724:'es',728:'ss',729:'sd',740:'sr',748:'sz',752:'se',756:'ch',760:'sy',
+  762:'tj',764:'th',768:'tg',776:'to',780:'tt',784:'ae',788:'tn',792:'tr',
+  795:'tm',798:'tv',800:'ug',804:'ua',807:'mk',818:'eg',826:'gb',834:'tz',
+  840:'us',854:'bf',858:'uy',860:'uz',862:'ve',882:'ws',887:'ye',894:'zm',
+};
+// Reverse: alpha-2 → numeric
+const ALPHA_TO_NUM = Object.fromEntries(Object.entries(ISO_NUM).map(([n,a])=>[a,+n]));
+
+// Countries too small to render meaningfully at 110m resolution — excluded from shapes
+const SHAPES_EXCLUDED = new Set([
+  'ad','bb','bh','bs','cv','dm','gd','ki','kn','lc','li','mc','mh','mt','mu',
+  'mv','nr','pw','sb','sc','sg','sm','st','to','tt','tv','vc','va','ws','fm',
+]);
+
+let worldGeoData = null; // cached TopoJSON features after first load
+
+async function loadWorldData() {
+  if (worldGeoData) return worldGeoData;
+  const r = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+  const topo = await r.json();
+  worldGeoData = (window as any).topojson.feature(topo, topo.objects.countries).features;
+  return worldGeoData;
+}
+
+function renderCountryShape(canvas, alpha2) {
+  const numId = ALPHA_TO_NUM[alpha2];
+  if (!worldGeoData || !numId) return false;
+  const feature = worldGeoData.find(f => +f.id === numId);
+  if (!feature) return false;
+
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // Collect all coordinates to find bounding box
+  const pts = [];
+  const collect = ring => ring.forEach(c => pts.push(c));
+  const geom = feature.geometry;
+  if (geom.type === 'Polygon')      geom.coordinates.forEach(collect);
+  else if (geom.type === 'MultiPolygon') geom.coordinates.forEach(p => p.forEach(collect));
+  if (!pts.length) return false;
+
+  let [x0,x1,y0,y1] = [Infinity,-Infinity,Infinity,-Infinity];
+  pts.forEach(([x,y]) => { x0=Math.min(x0,x); x1=Math.max(x1,x); y0=Math.min(y0,y); y1=Math.max(y1,y); });
+
+  const PAD = 0.12;
+  const rx = x1-x0 || 1, ry = y1-y0 || 1;
+  const scale = Math.min(W*(1-2*PAD)/rx, H*(1-2*PAD)/ry);
+  const ox = (W - rx*scale)/2 - x0*scale;
+  const oy = (H + ry*scale)/2 + y0*scale;
+  const proj = ([x,y]) => [x*scale+ox, -y*scale+oy];
+
+  function drawPolygon(rings) {
+    ctx.beginPath();
+    rings.forEach(ring => {
+      const [sx,sy] = proj(ring[0]); ctx.moveTo(sx,sy);
+      ring.slice(1).forEach(c => { const [px,py]=proj(c); ctx.lineTo(px,py); });
+      ctx.closePath();
+    });
+  }
+
+  ctx.shadowColor = 'rgba(0,212,255,0.5)';
+  ctx.shadowBlur = 16;
+  ctx.fillStyle   = 'rgba(0,212,255,0.15)';
+  ctx.strokeStyle = 'rgba(0,212,255,0.9)';
+  ctx.lineWidth   = 1.5;
+
+  if (geom.type === 'Polygon')      { drawPolygon(geom.coordinates); ctx.fill(); ctx.stroke(); }
+  else geom.coordinates.forEach(p => { drawPolygon(p); ctx.fill(); ctx.stroke(); });
+
+  ctx.shadowBlur = 0;
+  return true;
+}
+
 // Speed tier helpers
 function getSpeedTier(timeElapsed, timeLimit) {
   const pct = timeElapsed / timeLimit;
@@ -931,28 +1178,71 @@ function shuffle(arr) {
   return a;
 }
 
-function generateQuestions(total, continent) {
-  const pool = continent === 'all' ? ALL_COUNTRIES : ALL_COUNTRIES.filter(c => c.continent === continent);
+function generateQuestions(total, continent, difficulty = 'medium', shapesOnly = false) {
+  let pool = continent === 'all' ? ALL_COUNTRIES : ALL_COUNTRIES.filter(c => c.continent === continent);
+  if (shapesOnly) pool = pool.filter(c => !SHAPES_EXCLUDED.has(c.code));
   const shuffled = shuffle(pool);
+
   return shuffled.slice(0, Math.min(total, shuffled.length)).map(correct => {
-    const wrong = shuffle(pool.filter(c => c.code !== correct.code)).slice(0, 3);
+    let wrongPool;
+    if (difficulty === 'easy') {
+      // Options from different continents — visually very different
+      wrongPool = ALL_COUNTRIES.filter(c => c.code !== correct.code && c.continent !== correct.continent);
+      if (wrongPool.length < 3) wrongPool = ALL_COUNTRIES.filter(c => c.code !== correct.code);
+    } else if (difficulty === 'hard') {
+      // Similar-looking flags first, then same continent to fill gaps
+      const similar = (SIMILAR_FLAGS[correct.code] || [])
+        .map(code => ALL_COUNTRIES.find(c => c.code === code)).filter(Boolean);
+      const sameContinent = ALL_COUNTRIES.filter(c => c.code !== correct.code && c.continent === correct.continent);
+      wrongPool = [...similar, ...sameContinent].filter((c,i,a) => a.findIndex(x=>x.code===c.code)===i);
+      if (wrongPool.length < 3) wrongPool = [...wrongPool, ...ALL_COUNTRIES.filter(c=>c.code!==correct.code)].filter((c,i,a)=>a.findIndex(x=>x.code===c.code)===i);
+    } else {
+      // Medium: same continent
+      wrongPool = ALL_COUNTRIES.filter(c => c.code !== correct.code && c.continent === correct.continent);
+      if (wrongPool.length < 3) wrongPool = ALL_COUNTRIES.filter(c => c.code !== correct.code);
+    }
+    const wrong = shuffle(wrongPool).slice(0, 3);
     const options = shuffle([...wrong, correct]);
     return { correct, options };
   });
 }
 
-function startSinglePlayer() {
+async function startSinglePlayer(gameMode = 'flags') {
+  const prefix = gameMode === 'shapes' ? 'sh' : 'sp';
+  const difficulty = diffState[prefix] || 'medium';
+  const preset = DIFFICULTY_PRESETS[difficulty];
+  const continent = pillState[\`\${prefix}-continent\`] || 'all';
+  const shapesOnly = gameMode === 'shapes';
+
   const sp = state.sp;
-  sp.questions = parseInt(pillState['sp-questions']);
-  sp.timePerQ = parseInt(pillState['sp-time']);
-  sp.continent = pillState['sp-continent'];
-  sp.pool = generateQuestions(sp.questions, sp.continent);
+  sp.questions = preset.questions;
+  sp.timePerQ  = preset.timePerQ;
+  sp.continent = continent;
+  sp.difficulty = difficulty;
+  sp.gameMode  = gameMode;
+  sp.pool = generateQuestions(preset.questions, continent, difficulty, shapesOnly);
   sp.current = 0; sp.score = 0; sp.streak = 0; sp.bestStreak = 0;
   sp.correct = 0; sp.wrong = 0; sp.sessions = [];
   state.currentMode = 'sp';
 
   document.getElementById('mp-players-bar').classList.add('hidden');
   showScreen('screen-game');
+
+  if (gameMode === 'shapes') {
+    // Pre-load world data; show loading state
+    document.getElementById('flag-img').classList.add('hidden');
+    document.getElementById('shape-canvas').classList.remove('hidden');
+    try {
+      await loadWorldData();
+    } catch(e) {
+      toast('Could not load world map data — check your connection', 'error');
+      showHome(); return;
+    }
+  } else {
+    document.getElementById('flag-img').classList.remove('hidden');
+    document.getElementById('shape-canvas').classList.add('hidden');
+  }
+
   loadQuestion();
 }
 
@@ -972,10 +1262,29 @@ function loadQuestion() {
   document.getElementById('streak-count').textContent = sp.streak;
   document.getElementById('streak-badge').style.display = sp.streak >= 2 ? 'inline-flex' : 'none';
 
-  // Flag
-  const img = document.getElementById('flag-img');
-  img.src = flagUrl(q.correct.code);
-  img.className = 'flag-img reveal';
+  // Continent hint — shown on Easy mode
+  const hintEl = document.getElementById('continent-hint');
+  if (sp.difficulty === 'easy') {
+    hintEl.textContent = '📍 ' + q.correct.continent;
+    hintEl.classList.remove('hidden');
+  } else {
+    hintEl.classList.add('hidden');
+  }
+
+  // Flag or Shape
+  const isShapes = sp.gameMode === 'shapes';
+  const img    = document.getElementById('flag-img');
+  const canvas = document.getElementById('shape-canvas');
+  if (isShapes) {
+    img.classList.add('hidden');
+    canvas.classList.remove('hidden');
+    renderCountryShape(canvas, q.correct.code);
+  } else {
+    canvas.classList.add('hidden');
+    img.classList.remove('hidden');
+    img.src = flagUrl(q.correct.code);
+    img.className = 'flag-img reveal';
+  }
 
   // Options
   const grid = document.getElementById('options-grid');
@@ -1288,10 +1597,12 @@ function playAgain() { showScreen('screen-sp-setup'); }
 // MULTIPLAYER
 // ═══════════════════════════════════════════════════════════════════
 async function createRoom() {
+  const diff = DIFFICULTY_PRESETS[diffState['mp'] || 'medium'];
   const settings = {
     totalQuestions: parseInt(pillState['mp-questions']),
-    timePerQuestion: parseInt(pillState['mp-time']),
+    timePerQuestion: diff.timePerQ,
     continent: pillState['mp-continent'],
+    difficulty: diffState['mp'] || 'medium',
   };
   const res = await fetch('/api/rooms', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({}) });
   const { roomCode } = await res.json();
