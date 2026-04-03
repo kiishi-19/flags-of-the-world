@@ -806,19 +806,16 @@ window.addEventListener('DOMContentLoaded', () => {
 // ═══════════════════════════════════════════════════════════════════
 // HOME STATS
 // ═══════════════════════════════════════════════════════════════════
-async function loadHomeStats() {
-  try {
-    const res = await fetch(\`/api/stats/\${encodeURIComponent(state.username)}\`);
-    if (!res.ok) return;
-    const stats = await res.json();
-    if (!stats) return;
-    document.getElementById('hs-games').textContent = stats.totalGames;
-    document.getElementById('hs-best').textContent = stats.bestScore.toLocaleString();
-    const acc = stats.totalAnswered > 0
-      ? Math.round((stats.totalCorrect / stats.totalAnswered) * 100) + '%'
-      : '—';
-    document.getElementById('hs-accuracy').textContent = acc;
-  } catch(e) {}
+function loadHomeStats() {
+  // Read from localStorage — instant, no network needed
+  const stats = getLocalStats();
+  if (!stats) return;
+  document.getElementById('hs-games').textContent = stats.totalGames;
+  document.getElementById('hs-best').textContent = stats.bestScore.toLocaleString();
+  const acc = stats.totalAnswered > 0
+    ? Math.round((stats.totalCorrect / stats.totalAnswered) * 100) + '%'
+    : '—';
+  document.getElementById('hs-accuracy').textContent = acc;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1015,37 +1012,83 @@ function showScorePopup(total, speed, streak) {
   setTimeout(() => el.remove(), 800);
 }
 
+// ─── localStorage stats helpers ──────────────────────────────────────────────
+const LOCAL_STATS_KEY = () => \`fotw_stats:\${state.username}\`;
+
+function getLocalStats() {
+  try {
+    const raw = localStorage.getItem(LOCAL_STATS_KEY());
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+function saveLocalStats(sessionPayload) {
+  try {
+    const existing = getLocalStats();
+    const stats = existing || {
+      totalGames: 0, totalScore: 0, bestScore: 0,
+      totalCorrect: 0, totalAnswered: 0, history: [], flagStats: {},
+    };
+
+    stats.totalGames++;
+    stats.totalScore += sessionPayload.score;
+    stats.bestScore = Math.max(stats.bestScore, sessionPayload.score);
+    stats.totalCorrect += sessionPayload.correct;
+    stats.totalAnswered += sessionPayload.total;
+
+    for (const item of sessionPayload.sessionData || []) {
+      if (!stats.flagStats[item.code]) stats.flagStats[item.code] = { correct: 0, wrong: 0 };
+      if (item.correct) stats.flagStats[item.code].correct++;
+      else stats.flagStats[item.code].wrong++;
+    }
+
+    stats.history.unshift({
+      score: sessionPayload.score,
+      correct: sessionPayload.correct,
+      total: sessionPayload.total,
+      date: Date.now(),
+      continent: sessionPayload.continent,
+    });
+    stats.history = stats.history.slice(0, 50);
+
+    localStorage.setItem(LOCAL_STATS_KEY(), JSON.stringify(stats));
+    return stats;
+  } catch(e) {
+    console.error('localStorage write failed:', e);
+    return null;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function endSinglePlayer() {
   const sp = state.sp;
   stopTimer();
   document.onkeydown = null;
 
-  // Save to server
-  try {
-    const res = await fetch('/api/scores', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: state.username,
-        score: sp.score,
-        correct: sp.correct,
-        total: sp.pool.length,
-        continent: sp.continent,
-        timePerQuestion: sp.timePerQ,
-        sessionData: sp.sessions,
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      console.error('Score save failed:', res.status, err);
-      toast('Score saved locally only — server error: ' + res.status, 'error');
-    } else {
-      toast('Score saved!', 'success');
-    }
-  } catch(e) {
-    console.error('Score save network error:', e);
-    toast('Could not reach server — score not saved', 'error');
-  }
+  const sessionPayload = {
+    username: state.username,
+    score: sp.score,
+    correct: sp.correct,
+    total: sp.pool.length,
+    continent: sp.continent,
+    timePerQuestion: sp.timePerQ,
+    sessionData: sp.sessions,
+  };
+
+  // 1. Save locally first — always works, instant
+  saveLocalStats(sessionPayload);
+
+  // 2. Sync to server in the background — for leaderboard (don't block the UI)
+  fetch('/api/scores', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(sessionPayload),
+  }).then(res => {
+    if (!res.ok) console.warn('Server sync failed with status:', res.status);
+  }).catch(e => {
+    console.warn('Server sync unavailable (offline or not deployed):', e.message);
+  });
 
   // Show results
   const accuracy = Math.round((sp.correct / sp.pool.length) * 100);
@@ -1361,12 +1404,11 @@ function showMPFinalResults(gs) {
 // STATS
 // ═══════════════════════════════════════════════════════════════════
 async function loadStats() {
-  try {
-    const res = await fetch(\`/api/stats/\${encodeURIComponent(state.username)}\`);
-    if (!res.ok) { showNoStats(); return; }
-    const stats = await res.json();
-    if (!stats || stats.totalGames === 0) { showNoStats(); return; }
+  // Read from localStorage first (always available)
+  const stats = getLocalStats();
+  if (!stats || stats.totalGames === 0) { showNoStats(); return; }
 
+  try {
     document.getElementById('no-stats-msg').classList.add('hidden');
     document.getElementById('weak-flags-section').classList.remove('hidden');
 
@@ -1432,7 +1474,10 @@ async function loadStats() {
       document.getElementById('worst-flags').innerHTML = '<p class="text-dim text-sm">Play more games to see your weak spots!</p>';
     }
 
-  } catch(e) { showNoStats(); }
+  } catch(e) {
+    console.error('Stats render error:', e);
+    showNoStats();
+  }
 }
 
 function showNoStats() {
